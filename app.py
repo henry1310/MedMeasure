@@ -45,39 +45,37 @@ def target_mask(img_bgr):
     intensity = np.maximum(red + green + blue, 1)
     red_dominance = 255.0 * (red - np.maximum(green, blue)) / intensity
 
-    # A strong dominance is sufficient for clearly red/pink tissue.  The
-    # second branch retains darker, less saturated portions only when they are
-    # also distinctly redder than their local surroundings.  This prevents a
-    # broad, similarly coloured skin region from being selected as one target.
-    local_dominance = cv2.GaussianBlur(red_dominance, (0, 0), sigmaX=21)
-    strong_red = red_dominance >= 35
-    locally_redder = (red_dominance >= 25) & (
-        red_dominance - local_dominance >= 7
+    # Skin can be warm, saturated, and redder than green, so those absolute
+    # colour thresholds alone are not a reliable wound boundary. Compare each
+    # pixel with its local neighbourhood in both normalised red dominance and
+    # Lab red chroma. This retains a subtle pink region when it is visibly
+    # redder than the surrounding skin, while rejecting a broad, uniformly
+    # warm arm region. Very strongly red pixels are retained even in the
+    # centre of a large target, where the local comparison is naturally flat.
+    shortest_side = min(img_bgr.shape[:2])
+    local_sigma = max(5.0, shortest_side / 35.0)
+    local_dominance = cv2.GaussianBlur(
+        red_dominance, (0, 0), sigmaX=local_sigma
+    )
+    local_red_green = cv2.GaussianBlur(
+        red_green.astype(np.float32), (0, 0), sigmaX=local_sigma
+    )
+    strong_red = (red_dominance >= 40) & (red_green >= 155)
+    locally_redder = (
+        (red_dominance >= 28)
+        & (red_green >= 145)
+        & (red_dominance - local_dominance >= 4)
+        & (red_green - local_red_green >= 3)
     )
     target_pixels = (
         warm_hue
-        & (saturation >= 28)
-        & (red_green >= 145)
+        & (saturation >= 25)
         & (strong_red | locally_redder)
     )
     mask = np.where(target_pixels, 255, 0).astype(np.uint8)
-    redness = red - ((green + blue) // 2)
-
-    # The first branch captures saturated reds/pinks.  The second recovers
-    # darker shadowed pixels, but requires both red Lab chroma and measurable
-    # red-channel dominance so ordinary tan skin/background is excluded.
-    saturated_target = warm_hue & (saturation >= 55) & (red_green >= 140)
-    shadow_target = (
-        warm_hue
-        & (saturation >= 25)
-        & (red_green >= 145)
-        & (redness >= 18)
-    )
-    mask = np.where(saturated_target | shadow_target, 255, 0).astype(np.uint8)
 
     # Remove isolated camera noise, bridge small lighting gaps, and fill
     # interior holes without erasing genuinely irregular outer boundaries.
-    shortest_side = min(img_bgr.shape[:2])
     open_size = max(3, (shortest_side // 500) * 2 + 1)
     close_size = max(5, (shortest_side // 300) * 2 + 1)
     mask = cv2.morphologyEx(
