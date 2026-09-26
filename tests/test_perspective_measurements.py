@@ -182,3 +182,30 @@ def test_target_segmentation_keeps_irregular_red_pink_target_out_of_skin_backgro
     )
     target_area = cv2.contourArea(target)
     assert overlap / target_area > 0.75
+
+
+def test_target_segmentation_rejects_a_large_uniform_reddish_skin_region():
+    """A weakly red arm-sized region must not outrank a small wound target."""
+    image = np.full((420, 640, 3), (110, 145, 185), dtype=np.uint8)
+    # This hue, saturation, and Lab chroma resemble a broad HSV/Lab false
+    # positive, but the patch has no local red contrast.
+    cv2.rectangle(image, (20, 40), (620, 380), (100, 135, 180), thickness=-1)
+
+    wound = np.array(
+        [[280, 160], [355, 142], [400, 185], [378, 255],
+         [320, 278], [265, 225]],
+        dtype=np.int32,
+    )
+    cv2.fillPoly(image, [wound], (65, 55, 170))
+    cv2.ellipse(image, (333, 205), (35, 26), 0, 0, 360, (125, 115, 220), -1)
+
+    _, detected_target, _, mask = detect_reference_and_target(image)
+
+    assert detected_target is not None
+    assert mask[80, 80] == 0
+    assert mask[205, 333] == 255
+    assert cv2.contourArea(detected_target) < 0.08 * image.shape[0] * image.shape[1]
+
+    expected = cv2.fillPoly(np.zeros(mask.shape, np.uint8), [wound], 255)
+    overlap = cv2.countNonZero(cv2.bitwise_and(mask, expected))
+    assert overlap / cv2.contourArea(wound) > 0.7
