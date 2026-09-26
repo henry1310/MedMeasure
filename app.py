@@ -61,6 +61,19 @@ def target_mask(img_bgr):
         & (strong_red | locally_redder)
     )
     mask = np.where(target_pixels, 255, 0).astype(np.uint8)
+    redness = red - ((green + blue) // 2)
+
+    # The first branch captures saturated reds/pinks.  The second recovers
+    # darker shadowed pixels, but requires both red Lab chroma and measurable
+    # red-channel dominance so ordinary tan skin/background is excluded.
+    saturated_target = warm_hue & (saturation >= 55) & (red_green >= 140)
+    shadow_target = (
+        warm_hue
+        & (saturation >= 25)
+        & (red_green >= 145)
+        & (redness >= 18)
+    )
+    mask = np.where(saturated_target | shadow_target, 255, 0).astype(np.uint8)
 
     # Remove isolated camera noise, bridge small lighting gaps, and fill
     # interior holes without erasing genuinely irregular outer boundaries.

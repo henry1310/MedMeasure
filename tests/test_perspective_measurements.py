@@ -153,6 +153,7 @@ def test_target_segmentation_keeps_irregular_red_pink_target_out_of_skin_backgro
     # range and has a substantial *absolute* red-channel difference.  It must
     # not become the measured target.
     image = np.full((360, 520, 3), (90, 130, 180), dtype=np.uint8)
+    image = np.full((360, 520, 3), (125, 170, 205), dtype=np.uint8)
     target = np.array(
         [[170, 80], [285, 66], [351, 124], [326, 201], [355, 260],
          [246, 287], [163, 238], [137, 158]],
