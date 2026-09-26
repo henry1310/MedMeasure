@@ -7,6 +7,30 @@ from datetime import date
 
 st.set_page_config(page_title="MedMeasure", page_icon="🩺", layout="wide")
 
+
+# ---------- Measurement history ----------
+
+def add_history_measurement(history, measurement_date, area_cm2):
+    """Return a date-sorted copy of ``history`` with one saved measurement.
+
+    Keeping this small piece of state handling separate from the Streamlit UI
+    makes it clear that every plotted value is an actual saved measurement,
+    rather than a fixed comparison value.
+    """
+    entry = {
+        "Date": measurement_date.isoformat(),
+        "Wound size (cm²)": round(float(area_cm2), 2),
+    }
+    return sorted([*history, entry], key=lambda item: item["Date"])
+
+
+def history_chart_data(history):
+    """Convert saved entries into the column-oriented data used by Streamlit."""
+    return {
+        "Date": [entry["Date"] for entry in history],
+        "Wound size (cm²)": [entry["Wound size (cm²)"] for entry in history],
+    }
+
 # ---------- Computer vision ----------
 
 def read_image(uploaded):
@@ -258,6 +282,9 @@ def analyze(img_bgr, reference_width_cm, reference_height_cm):
 st.title("🩺 MedMeasure")
 st.subheader("Computer vision for quantitative medical measurements")
 
+if "measurement_history" not in st.session_state:
+    st.session_state.measurement_history = []
+
 st.info(
     "Hackathon prototype: this demonstration measures a simulated target, "
     "not a real patient wound. It is not a diagnostic or clinical device."
@@ -284,13 +311,29 @@ with st.sidebar:
         "the simulated target."
     )
 
-    st.header("Demo data")
-    previous_area = st.number_input(
-        "Previous measurement (cm²)",
-        min_value=0.0,
-        value=12.0,
-        step=0.1,
+    st.header("Add past measurement")
+    historical_date = st.date_input(
+        "Measurement date",
+        value=date.today(),
+        key="historical_measurement_date",
     )
+    historical_area = st.number_input(
+        "Wound size (cm²)",
+        min_value=0.0,
+        value=0.0,
+        step=0.1,
+        key="historical_measurement_area",
+    )
+    if st.button("Add to history", width="stretch"):
+        if historical_area <= 0:
+            st.sidebar.warning("Enter a wound size greater than 0 cm².")
+        else:
+            st.session_state.measurement_history = add_history_measurement(
+                st.session_state.measurement_history,
+                historical_date,
+                historical_area,
+            )
+            st.sidebar.success("Measurement added to history.")
 
 camera = st.camera_input(
     "Take a measurement photo"
@@ -360,35 +403,40 @@ else:
             c3.metric("Width", f'{result["width_cm"]:.2f} cm')
             c4.metric("Perimeter", f'{result["perimeter_cm"]:.2f} cm')
 
-            if previous_area > 0:
-                change = (
-                    (result["area_cm2"] - previous_area)
-                    / previous_area
-                    * 100
+            measurement_date = st.date_input(
+                "Date for this measurement",
+                value=date.today(),
+                key="current_measurement_date",
+            )
+            if st.button("Save current measurement", type="primary"):
+                st.session_state.measurement_history = add_history_measurement(
+                    st.session_state.measurement_history,
+                    measurement_date,
+                    result["area_cm2"],
                 )
-                st.metric(
-                    "Change from previous measurement",
-                    f"{change:+.1f}%",
-                    delta=f"{change:+.1f}%",
-                )
+                st.success("Current measurement saved to history.")
 
-        st.markdown("---")
-        st.markdown("### Measurement history")
 
-        history = np.array(
-            [previous_area, result["area_cm2"]],
-            dtype=float,
-        )
+st.markdown("---")
+st.markdown("### Measurement history")
 
-        st.line_chart(
-            {
-                "Area (cm²)": history
-            },
-            x_label="Visit",
-            y_label="Area (cm²)",
-        )
-
-        st.caption(
-            f"Visit 1: {previous_area:.2f} cm²  →  "
-            f"Current: {result['area_cm2']:.2f} cm²"
-        )
+history = st.session_state.measurement_history
+if history:
+    st.dataframe(
+        history,
+        column_order=("Date", "Wound size (cm²)"),
+        hide_index=True,
+        width="stretch",
+    )
+    st.line_chart(
+        history_chart_data(history),
+        x="Date",
+        y="Wound size (cm²)",
+        x_label="Date",
+        y_label="Wound size (cm²)",
+    )
+else:
+    st.info(
+        "No saved measurements yet. Save a photo result or add a past "
+        "measurement from the sidebar to build the trend."
+    )

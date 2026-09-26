@@ -5,6 +5,7 @@ target dimensions are known exactly, while each parametrized scene simulates a
 different camera tilt by projecting one flat physical plane with a homography.
 """
 
+from datetime import date
 from pathlib import Path
 import sys
 
@@ -16,12 +17,28 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import (
+    add_history_measurement,
     analyze,
     correct_perspective,
     detect_reference_and_target,
+    history_chart_data,
     reference_corners,
     target_mask,
 )
+
+
+def test_measurement_history_sorts_saved_dates_and_keeps_wound_sizes():
+    history = add_history_measurement([], date(2026, 9, 27), 14)
+    history = add_history_measurement(history, date(2026, 9, 26), 20.126)
+
+    assert history == [
+        {"Date": "2026-09-26", "Wound size (cm²)": 20.13},
+        {"Date": "2026-09-27", "Wound size (cm²)": 14.0},
+    ]
+    assert history_chart_data(history) == {
+        "Date": ["2026-09-26", "2026-09-27"],
+        "Wound size (cm²)": [20.13, 14.0],
+    }
 
 
 PIXELS_PER_CM = 100
