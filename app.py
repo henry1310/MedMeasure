@@ -14,6 +14,56 @@ def read_image(uploaded):
     arr = np.frombuffer(data, np.uint8)
     return cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
+
+def target_mask(img_bgr):
+    """Segment a red/pink simulated target while tolerating normal lighting.
+
+    Hue alone is brittle: shadows reduce saturation and a warm background can
+    have a red hue.  This mask combines hue/saturation with the Lab ``a``
+    channel (red-to-green) and channel redness.  Those chromatic cues remain
+    useful when the brightness changes across a photograph.  A small, scaled
+    cleanup is deliberately used instead of smoothing the contour so that
+    irregular target edges are retained for the perimeter measurement.
+
+    This remains a demonstration-only colour segmentation method; it is not
+    a clinical wound-segmentation model.
+    """
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+    blue, green, red = cv2.split(img_bgr.astype(np.int16))
+    hue, saturation, _ = cv2.split(hsv)
+
+    # OpenCV hue wraps red around both ends of its 0--179 hue scale.  The
+    # broader range includes orange-red, bruised red, and pale pink targets.
+    warm_hue = (hue <= 25) | (hue >= 155)
+    red_green = lab[:, :, 1]
+    redness = red - ((green + blue) // 2)
+
+    # The first branch captures saturated reds/pinks.  The second recovers
+    # darker shadowed pixels, but requires both red Lab chroma and measurable
+    # red-channel dominance so ordinary tan skin/background is excluded.
+    saturated_target = warm_hue & (saturation >= 55) & (red_green >= 140)
+    shadow_target = (
+        warm_hue
+        & (saturation >= 25)
+        & (red_green >= 145)
+        & (redness >= 18)
+    )
+    mask = np.where(saturated_target | shadow_target, 255, 0).astype(np.uint8)
+
+    # Remove isolated camera noise, bridge small lighting gaps, and fill
+    # interior holes without erasing genuinely irregular outer boundaries.
+    shortest_side = min(img_bgr.shape[:2])
+    open_size = max(3, (shortest_side // 500) * 2 + 1)
+    close_size = max(5, (shortest_side // 300) * 2 + 1)
+    mask = cv2.morphologyEx(
+        mask, cv2.MORPH_OPEN, np.ones((open_size, open_size), np.uint8)
+    )
+    mask = cv2.morphologyEx(
+        mask, cv2.MORPH_CLOSE, np.ones((close_size, close_size), np.uint8)
+    )
+    return mask
+
 def detect_reference_and_target(img_bgr):
     """
     Hackathon MVP:
@@ -37,20 +87,8 @@ def detect_reference_and_target(img_bgr):
         blue_mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8)
     )
 
-    # Red/pink target
-    lower_red1 = np.array([0, 70, 50])
-    upper_red1 = np.array([12, 255, 255])
-    lower_red2 = np.array([165, 70, 50])
-    upper_red2 = np.array([179, 255, 255])
-
-    red_mask = cv2.inRange(hsv, lower_red1, upper_red1)
-    red_mask |= cv2.inRange(hsv, lower_red2, upper_red2)
-    red_mask = cv2.morphologyEx(
-        red_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)
-    )
-    red_mask = cv2.morphologyEx(
-        red_mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8)
-    )
+    # Red/pink target, including uneven illumination and shadowed portions.
+    red_mask = target_mask(img_bgr)
 
     def largest_contour(mask, min_area):
         contours, _ = cv2.findContours(
@@ -148,7 +186,7 @@ def analyze(img_bgr, reference_width_cm, reference_height_cm):
     if error:
         return None, error
 
-    ref, target, _, _ = detect_reference_and_target(corrected)
+    ref, target, _, segmentation_mask = detect_reference_and_target(corrected)
     if target is None:
         return None, "Could not find the red/pink target."
 
@@ -190,6 +228,7 @@ def analyze(img_bgr, reference_width_cm, reference_height_cm):
         "width_cm": width_cm,
         "perimeter_cm": perimeter_cm,
         "annotated": cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB),
+        "segmentation_mask": segmentation_mask,
     }, None
 
 # ---------- UI ----------
@@ -281,6 +320,11 @@ else:
             st.image(
                 result["annotated"],
                 caption="Perspective-corrected computer-vision result",
+            )
+            st.image(
+                result["segmentation_mask"],
+                caption="Red/pink segmentation mask (white = measured target)",
+                clamp=True,
             )
 
         with right:

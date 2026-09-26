@@ -13,6 +13,19 @@ Run the suite with:
 pytest
 ```
 
+## Target segmentation
+
+The simulated red/pink target is segmented using a combined HSV and CIE Lab
+colour mask rather than a single red hue range.  It accepts red, pink, and
+shadowed-red pixels while requiring red-channel dominance and Lab red chroma
+for low-saturation pixels; this reduces selection of skin-like or neutral
+backgrounds.  Small resolution-scaled morphological cleanup removes noise and
+lighting gaps without smoothing away the target's irregular outer boundary.
+
+The Streamlit result includes a black-and-white segmentation-mask preview:
+white pixels are included in the measurement.  This is an inspection aid for
+the hackathon simulation only, not clinical validation or diagnosis.
+
 For every simulated tilt, the tests require `reference_corners` to locate the
 blue marker within 4 pixels of its projected corners and require
 `correct_perspective` to restore the marker to within 3 pixels of its expected
