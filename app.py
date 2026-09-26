@@ -66,23 +66,94 @@ def detect_reference_and_target(img_bgr):
 
     return ref_contour, target_contour, blue_mask, red_mask
 
-def analyze(img_bgr, reference_width_cm):
-    ref, target, _, _ = detect_reference_and_target(img_bgr)
+def order_corners(corners):
+    """Return quadrilateral corners in top-left, top-right, bottom-right,
+    bottom-left order.
+    """
+    ordered = np.zeros((4, 2), dtype=np.float32)
+    sums = corners.sum(axis=1)
+    differences = np.diff(corners, axis=1).flatten()
+
+    ordered[0] = corners[np.argmin(sums)]
+    ordered[2] = corners[np.argmax(sums)]
+    ordered[1] = corners[np.argmin(differences)]
+    ordered[3] = corners[np.argmax(differences)]
+    return ordered
+
+def reference_corners(ref_contour):
+    """Find the four physical corners of the blue reference marker."""
+    perimeter = cv2.arcLength(ref_contour, True)
+    approximation = cv2.approxPolyDP(ref_contour, 0.02 * perimeter, True)
+    if len(approximation) != 4:
+        return None
+    return order_corners(approximation.reshape(4, 2).astype(np.float32))
+
+def correct_perspective(img_bgr, ref_contour, reference_width_cm,
+                        reference_height_cm):
+    """Warp the image so the blue reference marker is viewed face-on."""
+    pixels_per_cm = 100
+    marker_width_px = round(reference_width_cm * pixels_per_cm)
+    marker_height_px = round(reference_height_cm * pixels_per_cm)
+
+    if marker_width_px <= 0 or marker_height_px <= 0:
+        return None, "Reference marker dimensions must be positive."
+
+    source_corners = reference_corners(ref_contour)
+    if source_corners is None:
+        return None, "Could not identify four corners of the blue reference marker."
+    marker_corners = np.array(
+        [
+            [0, 0],
+            [marker_width_px - 1, 0],
+            [marker_width_px - 1, marker_height_px - 1],
+            [0, marker_height_px - 1],
+        ],
+        dtype=np.float32,
+    )
+    transform = cv2.getPerspectiveTransform(source_corners, marker_corners)
+
+    image_height, image_width = img_bgr.shape[:2]
+    image_corners = np.array(
+        [[[0, 0], [image_width - 1, 0],
+          [image_width - 1, image_height - 1], [0, image_height - 1]]],
+        dtype=np.float32,
+    )
+    warped_corners = cv2.perspectiveTransform(image_corners, transform)[0]
+    minimum = np.floor(warped_corners.min(axis=0)).astype(int)
+    maximum = np.ceil(warped_corners.max(axis=0)).astype(int)
+
+    translation = np.array(
+        [[1, 0, -minimum[0]], [0, 1, -minimum[1]], [0, 0, 1]],
+        dtype=np.float32,
+    )
+    output_width, output_height = maximum - minimum + 1
+    corrected = cv2.warpPerspective(
+        img_bgr,
+        translation @ transform,
+        (int(output_width), int(output_height)),
+        flags=cv2.INTER_LINEAR,
+        borderValue=(255, 255, 255),
+    )
+    return corrected, None
+
+def analyze(img_bgr, reference_width_cm, reference_height_cm):
+    ref, _, _, _ = detect_reference_and_target(img_bgr)
 
     if ref is None:
         return None, "Could not find the blue reference marker."
+
+    corrected, error = correct_perspective(
+        img_bgr, ref, reference_width_cm, reference_height_cm
+    )
+    if error:
+        return None, error
+
+    ref, target, _, _ = detect_reference_and_target(corrected)
     if target is None:
         return None, "Could not find the red/pink target."
 
-    # Use the average of the reference rectangle's width/height as its
-    # pixel size. This makes the demo tolerant of portrait/landscape marker.
-    rw, rh = cv2.minAreaRect(ref)[1]
-    ref_px = max(rw, rh)
-
-    if ref_px <= 0:
-        return None, "Reference marker was detected but has invalid size."
-
-    cm_per_px = reference_width_cm / ref_px
+    # The perspective warp maps the marker to 100 pixels per known centimeter.
+    cm_per_px = 0.01
 
     target_area_px = cv2.contourArea(target)
     area_cm2 = target_area_px * (cm_per_px ** 2)
@@ -94,8 +165,9 @@ def analyze(img_bgr, reference_width_cm):
     perimeter_px = cv2.arcLength(target, True)
     perimeter_cm = perimeter_px * cm_per_px
 
-    annotated = img_bgr.copy()
-    cv2.drawContours(annotated, [ref], -1, (255, 255, 0), 3)
+    annotated = corrected.copy()
+    if ref is not None:
+        cv2.drawContours(annotated, [ref], -1, (255, 255, 0), 3)
     cv2.drawContours(annotated, [target], -1, (0, 255, 0), 3)
     cv2.rectangle(
         annotated, (x, y), (x + w, y + h), (0, 255, 255), 2
@@ -139,9 +211,16 @@ with st.sidebar:
         value=2.0,
         step=0.1,
     )
+    reference_height = st.number_input(
+        "Blue reference marker height (cm)",
+        min_value=0.1,
+        max_value=20.0,
+        value=1.0,
+        step=0.1,
+    )
     st.caption(
-        "Place a blue rectangle/card of this known width next to the "
-        "simulated target."
+        "Enter both dimensions of the blue rectangle/card placed next to "
+        "the simulated target."
     )
 
     st.header("Demo data")
@@ -186,7 +265,7 @@ if source is None:
 else:
     img_bgr = read_image(source)
 
-    result, error = analyze(img_bgr, reference_width)
+    result, error = analyze(img_bgr, reference_width, reference_height)
 
     if error:
         st.error(error)
@@ -200,7 +279,10 @@ else:
         left, right = st.columns(2)
 
         with left:
-            st.image(result["annotated"], caption="Computer-vision result")
+            st.image(
+                result["annotated"],
+                caption="Perspective-corrected computer-vision result",
+            )
 
         with right:
             st.markdown("### Quantitative measurement")
