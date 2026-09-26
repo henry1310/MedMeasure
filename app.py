@@ -31,6 +31,16 @@ def history_chart_data(history):
         "Wound size (cm²)": [entry["Wound size (cm²)"] for entry in history],
     }
 
+
+def remove_history_measurements(history, indices_to_remove):
+    """Return history without the zero-based rows selected for removal."""
+    removal_indices = set(indices_to_remove)
+    return [
+        entry for index, entry in enumerate(history)
+        if index not in removal_indices
+    ]
+
+
 # ---------- Computer vision ----------
 
 def read_image(uploaded):
@@ -284,6 +294,8 @@ st.subheader("Computer vision for quantitative medical measurements")
 
 if "measurement_history" not in st.session_state:
     st.session_state.measurement_history = []
+if "history_editor_version" not in st.session_state:
+    st.session_state.history_editor_version = 0
 
 st.info(
     "Hackathon prototype: this demonstration measures a simulated target, "
@@ -422,14 +434,48 @@ st.markdown("### Measurement history")
 
 history = st.session_state.measurement_history
 if history:
-    st.dataframe(
-        history,
-        column_order=("Date", "Wound size (cm²)"),
+    st.caption(
+        "Select unwanted rows, then remove them. The trend updates immediately."
+    )
+    editable_history = {
+        "Date": [entry["Date"] for entry in history],
+        "Wound size (cm²)": [entry["Wound size (cm²)"] for entry in history],
+        "Remove": [False] * len(history),
+    }
+    edited_history = st.data_editor(
+        editable_history,
+        column_order=("Date", "Wound size (cm²)", "Remove"),
+        column_config={
+            "Date": st.column_config.TextColumn("Date"),
+            "Wound size (cm²)": st.column_config.NumberColumn(
+                "Wound size (cm²)", format="%.2f cm²"
+            ),
+            "Remove": st.column_config.CheckboxColumn(
+                "Remove", help="Select this measurement for removal."
+            ),
+        },
+        disabled=("Date", "Wound size (cm²)"),
         hide_index=True,
+        key=f"history_removal_editor_{st.session_state.history_editor_version}",
         width="stretch",
     )
+    selected_indices = [
+        index for index, selected in enumerate(edited_history["Remove"])
+        if selected
+    ]
+    if selected_indices and st.button(
+        f"Remove {len(selected_indices)} selected measurement(s)",
+        type="secondary",
+    ):
+        st.session_state.measurement_history = remove_history_measurements(
+            history, selected_indices
+        )
+        # A new key clears selections so an old checkbox cannot remove a new row.
+        st.session_state.history_editor_version += 1
+        st.rerun()
+
     st.line_chart(
-        history_chart_data(history),
+        history_chart_data(st.session_state.measurement_history),
         x="Date",
         y="Wound size (cm²)",
         x_label="Date",

@@ -23,6 +23,7 @@ from app import (
     detect_reference_and_target,
     history_chart_data,
     reference_corners,
+    remove_history_measurements,
     target_mask,
 )
 
@@ -38,6 +39,24 @@ def test_measurement_history_sorts_saved_dates_and_keeps_wound_sizes():
     assert history_chart_data(history) == {
         "Date": ["2026-09-26", "2026-09-27"],
         "Wound size (cm²)": [20.13, 14.0],
+    }
+
+
+def test_measurement_history_can_remove_selected_rows_without_touching_others():
+    history = [
+        {"Date": "2026-09-26", "Wound size (cm²)": 20.13},
+        {"Date": "2026-09-27", "Wound size (cm²)": 14.0},
+        {"Date": "2026-09-28", "Wound size (cm²)": 10.5},
+    ]
+
+    updated_history = remove_history_measurements(history, [0, 2])
+
+    assert updated_history == [
+        {"Date": "2026-09-27", "Wound size (cm²)": 14.0},
+    ]
+    assert history_chart_data(updated_history) == {
+        "Date": ["2026-09-27"],
+        "Wound size (cm²)": [14.0],
     }
 
 
