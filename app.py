@@ -456,8 +456,7 @@ if history:
         },
         disabled=("Date", "Wound size (cm²)"),
         hide_index=True,
-        key=f"history_removal_editor_{st.session_state.history_editor_version}",
-        width="stretch",
+        key=f"history_removal_editor_{st.session_state.history_editor_version}"
     )
     selected_indices = [
         index for index, selected in enumerate(edited_history["Remove"])
