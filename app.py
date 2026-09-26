@@ -41,7 +41,7 @@ def remove_history_measurements(history, indices_to_remove):
     ]
 
 
-#---------- Computer vision ----------
+# ---------- Computer vision ----------
 
 def read_image(uploaded):
     data = uploaded.getvalue()
