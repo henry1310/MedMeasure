@@ -324,7 +324,7 @@ with st.sidebar:
         step=0.1,
         key="historical_measurement_area",
     )
-    if st.button("Add to history", width="stretch"):
+    if st.button("Add to history"):
         if historical_area <= 0:
             st.sidebar.warning("Enter a wound size greater than 0 cm².")
         else:
@@ -425,8 +425,7 @@ if history:
     st.dataframe(
         history,
         column_order=("Date", "Wound size (cm²)"),
-        hide_index=True,
-        width="stretch",
+        hide_index=True
     )
     st.line_chart(
         history_chart_data(history),
