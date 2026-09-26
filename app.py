@@ -153,8 +153,7 @@ with st.sidebar:
     )
 
 camera = st.camera_input(
-    "Take a measurement photo",
-    resolution="1080p",
+    "Take a measurement photo"
 )
 
 uploaded = st.file_uploader(
