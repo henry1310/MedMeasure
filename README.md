@@ -24,7 +24,11 @@ sketch streams JSON telemetry at 115200 baud and accepts commands such as
 
 `serial_bridge.py` provides the Python `HardwareBridge` interface. It detects
 Arduino, CH340, and FTDI serial adapters, returns parsed telemetry when a board
-is connected, and returns mock telemetry when hardware is unavailable.
+is connected, and returns mock telemetry when hardware is unavailable. The
+Streamlit sidebar displays the connection state and live light telemetry, and
+can send the LED brightness command to the board. If automatic detection misses
+your adapter, start the app with `MEDMEASURE_SERIAL_PORT` set to its serial
+device (for example, `/dev/ttyACM0` or `COM3`).
 
 ## Target segmentation
 

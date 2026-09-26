@@ -5,6 +5,8 @@ import numpy as np
 from PIL import Image
 from datetime import date
 
+from serial_bridge import HardwareBridge
+
 st.set_page_config(page_title="MedMeasure", page_icon="🩺", layout="wide")
 
 
@@ -296,6 +298,10 @@ if "measurement_history" not in st.session_state:
     st.session_state.measurement_history = []
 if "history_editor_version" not in st.session_state:
     st.session_state.history_editor_version = 0
+if "hardware_bridge" not in st.session_state:
+    st.session_state.hardware_bridge = HardwareBridge()
+if "hardware_brightness" not in st.session_state:
+    st.session_state.hardware_brightness = 128
 
 st.info(
     "Hackathon prototype: this demonstration measures a simulated target, "
@@ -303,6 +309,43 @@ st.info(
 )
 
 with st.sidebar:
+    st.header("Arduino integration")
+    bridge = st.session_state.hardware_bridge
+    if bridge.connected:
+        st.success(f"Connected to Arduino on `{bridge.port}`")
+    else:
+        st.warning("Arduino not connected — showing simulated telemetry.")
+    if st.button("Reconnect Arduino"):
+        bridge.find_hardware()
+        st.rerun()
+
+    telemetry = bridge.read_telemetry()
+    telemetry_status = telemetry.get("status", "UNKNOWN")
+    telemetry_lux = telemetry.get("lux")
+    if telemetry_lux is not None:
+        st.metric("Ambient light", f"{float(telemetry_lux):.1f} lux")
+    else:
+        st.caption("No light telemetry received yet.")
+    st.caption(f"Telemetry status: {telemetry_status}")
+
+    brightness = st.slider(
+        "Arduino LED brightness",
+        min_value=0,
+        max_value=255,
+        key="hardware_brightness",
+        help="Sends SET_BRIGHTNESS to the Arduino PWM output when applied.",
+    )
+    if st.button("Apply LED brightness"):
+        try:
+            bridge.set_brightness(brightness)
+            if bridge.connected:
+                st.success("Brightness command sent to Arduino.")
+            else:
+                st.info("Arduino is offline; brightness was not sent.")
+        except ValueError as error:
+            st.error(str(error))
+
+    st.divider()
     st.header("Calibration")
     reference_width = st.number_input(
         "Blue reference marker width (cm)",
