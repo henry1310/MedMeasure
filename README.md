@@ -13,6 +13,19 @@ Run the suite with:
 pytest
 ```
 
+## Optional Arduino telemetry
+
+The optional hardware payload lives in
+[`firmware/medmeasure_payload.ino`](firmware/medmeasure_payload.ino). Install
+the ArduinoJson library, upload the sketch to an Arduino-compatible board, and
+connect its simulated photodiode to `A0` and PWM lighting to pin `9`. The
+sketch streams JSON telemetry at 115200 baud and accepts commands such as
+`SET_BRIGHTNESS:128` over serial.
+
+`serial_bridge.py` provides the Python `HardwareBridge` interface. It detects
+Arduino, CH340, and FTDI serial adapters, returns parsed telemetry when a board
+is connected, and returns mock telemetry when hardware is unavailable.
+
 ## Target segmentation
 
 The simulated red/pink target is segmented using a combined HSV and CIE Lab
