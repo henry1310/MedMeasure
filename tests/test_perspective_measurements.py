@@ -149,6 +149,10 @@ def test_generated_tilt_fixture_can_be_written_for_visual_inspection(tmp_path):
 
 def test_target_segmentation_keeps_irregular_red_pink_target_out_of_skin_background():
     """Colour segmentation should include shade changes without selecting skin."""
+    # This warm, moderately saturated skin tone passes a simple HSV red/pink
+    # range and has a substantial *absolute* red-channel difference.  It must
+    # not become the measured target.
+    image = np.full((360, 520, 3), (90, 130, 180), dtype=np.uint8)
     image = np.full((360, 520, 3), (125, 170, 205), dtype=np.uint8)
     target = np.array(
         [[170, 80], [285, 66], [351, 124], [326, 201], [355, 260],
@@ -171,6 +175,7 @@ def test_target_segmentation_keeps_irregular_red_pink_target_out_of_skin_backgro
     assert mask[145, 220] == 255  # pale pink
     assert mask[205, 290] == 255  # shadowed red
     assert mask[20, 20] == 0  # skin-like background
+    assert cv2.countNonZero(mask) / mask.size < 0.25
 
     overlap = cv2.countNonZero(
         cv2.bitwise_and(mask, cv2.fillPoly(np.zeros(mask.shape, np.uint8), [target], 255))

@@ -17,9 +17,10 @@ pytest
 
 The simulated red/pink target is segmented using a combined HSV and CIE Lab
 colour mask rather than a single red hue range.  It accepts red, pink, and
-shadowed-red pixels while requiring red-channel dominance and Lab red chroma
-for low-saturation pixels; this reduces selection of skin-like or neutral
-backgrounds.  Small resolution-scaled morphological cleanup removes noise and
+shadowed-red pixels while requiring Lab red chroma plus *brightness-normalized*
+red dominance.  A local-colour contrast check admits low-saturation shadowed
+pixels without turning a broad, similarly warm skin region into the measured
+target.  Small resolution-scaled morphological cleanup removes noise and
 lighting gaps without smoothing away the target's irregular outer boundary.
 
 The Streamlit result includes a black-and-white segmentation-mask preview:

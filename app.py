@@ -37,6 +37,30 @@ def target_mask(img_bgr):
     # broader range includes orange-red, bruised red, and pale pink targets.
     warm_hue = (hue <= 25) | (hue >= 155)
     red_green = lab[:, :, 1]
+    # Absolute red-channel differences are misleading on skin: a bright tan
+    # pixel can have a large R-G difference simply because it is bright.  Use
+    # a brightness-normalized red dominance instead.  Healthy skin generally
+    # remains low on this measure, while blood-red and pink wound tissue stays
+    # high even in a shadow.
+    intensity = np.maximum(red + green + blue, 1)
+    red_dominance = 255.0 * (red - np.maximum(green, blue)) / intensity
+
+    # A strong dominance is sufficient for clearly red/pink tissue.  The
+    # second branch retains darker, less saturated portions only when they are
+    # also distinctly redder than their local surroundings.  This prevents a
+    # broad, similarly coloured skin region from being selected as one target.
+    local_dominance = cv2.GaussianBlur(red_dominance, (0, 0), sigmaX=21)
+    strong_red = red_dominance >= 35
+    locally_redder = (red_dominance >= 25) & (
+        red_dominance - local_dominance >= 7
+    )
+    target_pixels = (
+        warm_hue
+        & (saturation >= 28)
+        & (red_green >= 145)
+        & (strong_red | locally_redder)
+    )
+    mask = np.where(target_pixels, 255, 0).astype(np.uint8)
     redness = red - ((green + blue) // 2)
 
     # The first branch captures saturated reds/pinks.  The second recovers
