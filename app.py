@@ -4,6 +4,10 @@ import cv2
 import numpy as np
 from PIL import Image
 from datetime import date
+import csv
+from html import escape
+from io import BytesIO, StringIO
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from serial_bridge import HardwareBridge
 
@@ -41,6 +45,51 @@ def remove_history_measurements(history, indices_to_remove):
         entry for index, entry in enumerate(history)
         if index not in removal_indices
     ]
+
+
+def history_export_zip(history):
+    """Build a ZIP containing the saved measurements and a portable SVG trend."""
+    csv_buffer = StringIO()
+    writer = csv.DictWriter(csv_buffer, fieldnames=("Date", "Wound size (cm²)"))
+    writer.writeheader()
+    writer.writerows(history)
+
+    width, height, padding = 760, 360, 55
+    values = [entry["Wound size (cm²)"] for entry in history]
+    minimum, maximum = min(values), max(values)
+    value_range = maximum - minimum or 1
+    plot_width = width - (padding * 2)
+    plot_height = height - (padding * 2)
+    points = []
+    for index, value in enumerate(values):
+        x = padding + (plot_width * index / max(len(values) - 1, 1))
+        y = padding + plot_height * (1 - ((value - minimum) / value_range))
+        points.append(f"{x:.1f},{y:.1f}")
+    labels = "".join(
+        f'<text x="{padding + (plot_width * index / max(len(history) - 1, 1)):.1f}" '
+        f'y="{height - 18}" text-anchor="middle">{escape(entry["Date"])}</text>'
+        for index, entry in enumerate(history)
+    )
+    dots = "".join(
+        f'<circle class="point" cx="{point.split(",")[0]}" '
+        f'cy="{point.split(",")[1]}" r="4"/>'
+        for point in points
+    )
+    graph = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
+  <style>text {{ font: 12px sans-serif; fill: #334155; }} .title {{ font-size: 18px; font-weight: bold; }} .axis {{ stroke: #94a3b8; }} .trend {{ fill: none; stroke: #0f766e; stroke-width: 3; }} .point {{ fill: #0f766e; }}</style>
+  <rect width="100%" height="100%" fill="white"/>
+  <text class="title" x="{padding}" y="30">Wound size history</text>
+  <line class="axis" x1="{padding}" y1="{padding}" x2="{padding}" y2="{height - padding}"/><line class="axis" x1="{padding}" y1="{height - padding}" x2="{width - padding}" y2="{height - padding}"/>
+  <text x="8" y="{padding + 4}">{maximum:.2f} cm²</text><text x="8" y="{height - padding}">{minimum:.2f} cm²</text>
+  <polyline class="trend" points="{' '.join(points)}"/>{dots}
+  {labels}
+</svg>'''
+
+    archive = BytesIO()
+    with ZipFile(archive, "w", compression=ZIP_DEFLATED) as zip_file:
+        zip_file.writestr("measurement_history.csv", csv_buffer.getvalue())
+        zip_file.writestr("measurement_history_graph.svg", graph)
+    return archive.getvalue()
 
 
 # ---------- Computer vision ----------
@@ -302,6 +351,8 @@ if "hardware_bridge" not in st.session_state:
     st.session_state.hardware_bridge = HardwareBridge()
 if "hardware_brightness" not in st.session_state:
     st.session_state.hardware_brightness = 128
+if "camera_enabled" not in st.session_state:
+    st.session_state.camera_enabled = True
 
 st.info(
     "Hackathon prototype: this demonstration measures a simulated target, "
@@ -390,9 +441,21 @@ with st.sidebar:
             )
             st.sidebar.success("Measurement added to history.")
 
-camera = st.camera_input(
-    "Take a measurement photo"
+camera = None
+camera_toggle_label = (
+    "Turn camera off" if st.session_state.camera_enabled else "Turn camera on"
 )
+if st.button(
+    camera_toggle_label,
+    help="Stops or enables the browser camera for this session.",
+):
+    st.session_state.camera_enabled = not st.session_state.camera_enabled
+    st.rerun()
+
+if st.session_state.camera_enabled:
+    camera = st.camera_input("Take a measurement photo")
+else:
+    st.info("Camera is off. Turn it on when you are ready to take another photo.")
 
 uploaded = st.file_uploader(
     "Or upload a test image",
@@ -515,6 +578,14 @@ if history:
         # A new key clears selections so an old checkbox cannot remove a new row.
         st.session_state.history_editor_version += 1
         st.rerun()
+
+    st.download_button(
+        "Download measurement history and graph",
+        data=history_export_zip(history),
+        file_name="medmeasure_history.zip",
+        mime="application/zip",
+        help="Downloads a ZIP with the measurements CSV and trend graph SVG.",
+    )
 
     st.line_chart(
         history_chart_data(st.session_state.measurement_history),

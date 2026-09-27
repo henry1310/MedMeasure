@@ -6,8 +6,10 @@ different camera tilt by projecting one flat physical plane with a homography.
 """
 
 from datetime import date
+from io import BytesIO
 from pathlib import Path
 import sys
+from zipfile import ZipFile
 
 import cv2
 import numpy as np
@@ -22,6 +24,7 @@ from app import (
     correct_perspective,
     detect_reference_and_target,
     history_chart_data,
+    history_export_zip,
     reference_corners,
     remove_history_measurements,
     target_mask,
@@ -58,6 +61,27 @@ def test_measurement_history_can_remove_selected_rows_without_touching_others():
         "Date": ["2026-09-27"],
         "Wound size (cm²)": [14.0],
     }
+
+
+def test_history_export_contains_measurements_and_trend_graph():
+    history = [
+        {"Date": "2026-09-26", "Wound size (cm²)": 20.13},
+        {"Date": "2026-09-27", "Wound size (cm²)": 14.0},
+    ]
+
+    with ZipFile(BytesIO(history_export_zip(history))) as archive:
+        assert archive.namelist() == [
+            "measurement_history.csv",
+            "measurement_history_graph.svg",
+        ]
+        assert archive.read("measurement_history.csv").decode() == (
+            "Date,Wound size (cm²)\r\n2026-09-26,20.13\r\n2026-09-27,14.0\r\n"
+        )
+        graph = archive.read("measurement_history_graph.svg").decode()
+
+    assert "Wound size history" in graph
+    assert "2026-09-26" in graph
+    assert "20.13 cm²" in graph
 
 
 PIXELS_PER_CM = 100
